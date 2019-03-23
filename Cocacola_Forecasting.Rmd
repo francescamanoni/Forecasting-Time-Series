@@ -1,0 +1,256 @@
+---
+title: "Cocacola Earnings - Optional Project - Forecasting Time Series"
+author: "Group D - MBD O-1"
+date: "22 february 2019"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+
+if(!"fBasics" %in% installed.packages()) {install.packages("fBasics")}
+library(fBasics)
+if(!"forecast" %in% installed.packages()) {install.packages("forecast")}
+library(forecast) 
+
+```
+
+
+```{r}
+
+#reading the data and taking the training set (the first 100 values)
+data<-read.csv("")
+data=read.table("Homework3_DATA.csv",header=T)
+
+y.train <- data[1:99,2]
+
+ts.plot(y.train)
+
+nlags=40
+
+acf(y.train,nlags)
+pacf(y.train,nlags) 
+```
+
+
+Applying the Dickey-Fuller test, we can see that one transformation is needed to make the data stationary for both the seasonal differences and the regular differences (the result is 1 in both cases). For this reason, our baseline model will be a SARIMA (0,1,0) x (0,1,0).
+
+```{r}
+s=4      # seasonal parameter 
+nsdiffs(y.train,m=s,test=c("ocsb"))  # seasonal differences?
+ndiffs(y.train, alpha=0.05, test=c("adf")) # regular differences?
+
+fit<-arima(y.train,order=c(0,1,0),seasonal=list(order=c(0,1,0),period=s)) 
+fit
+
+ts.plot(fit$residuals)
+acf(fit$residuals,nlags)
+pacf(fit$residuals,nlags) 
+
+```
+
+## Seasonal Arima Model
+
+Looking at the ACF and PACF plotted, we can see that the only seasonal lag out of limits is the 4th one, while the others (8,12...) are within the limits. For this reason we will apply a SARIMA (0,1,0) x (1,1,0).
+
+```{r}
+fit1<-arima(y.train,order=c(0,1,0),seasonal=list(order=c(1,1,0),period=s)) 
+fit1
+
+ts.plot(fit1$residuals)
+acf(fit1$residuals,nlags)
+pacf(fit1$residuals,nlags) 
+```
+
+###Interpretation
+From the ACF and the PACF we can notice that this change has been advantageous, there are no more seasonal lags out of limits. Moreover, we can see that the coefficient of the model is statistically different from 0.
+
+## ARIMA Model
+Looking at the ACF and PACF above, we see that in the ACF we still have one main lag out of limit, the first one. Therefore we correct the MA part and we apply SARIMA (0,1,0) x (1,1,0).
+```{r}
+
+fit2<-arima(y.train,order=c(0,1,1),seasonal=list(order=c(1,1,0),period=s)) 
+fit2
+
+ts.plot(fit2$residuals)
+acf(fit2$residuals,nlags)
+pacf(fit2$residuals,nlags) 
+```
+
+
+###Interpretation
+
+From the ACF and the PACF we see now that there has been another improvement, since there are almost no more lags out of limits. Also both the coefficients (ma1 and sar1). Therefore, this model will be employed for forecasting.
+
+### Remark: 
+
+from the ACF and PACF we see that we still have the 9th lag out of limits but since the data is quarterly, correcting for the 9th lag means that we would need data from more than two years to predict the next quarter value, which may no make sense from the business perspective.
+
+# Log Transformation
+
+We try now to apply the logarithmic transformation in order to remove the non stationarity of the variance
+
+```{r}
+z <- log(y.train)
+ts.plot(z)
+
+nlags=16
+
+acf(z,nlags)
+pacf(z,nlags)
+
+```
+
+
+Applying the Dickey-Fuller test, we can see that one transformation is needed to make the data stationary for both the seasonal differences and the regular differences (the result is 1 in both cases). For this reason, our baseline model will be a SARIMA (0,1,0) x (0,1,0).
+
+```{r}
+s=4      # seasonal parameter 
+nsdiffs(z,m=s,test=c("ocsb"))  # seasonal differences?
+ndiffs(z, alpha=0.05, test=c("adf")) # regular differences?
+
+fit3<-arima(z,order=c(0,1,0),seasonal=list(order=c(0,1,0),period=s)) 
+fit3
+
+ts.plot(fit3$residuals)
+acf(fit3$residuals,nlags)
+pacf(fit3$residuals,nlags) 
+
+```
+
+# Seasonal Arima Model
+
+Looking at the ACF and PACF plotted, we can see that the 4th lag is largely out of limits, the breach of the 8th one is smaller  while the others (12,16...) are within the limits. For this reason we will apply a SARIMA (0,1,0) x (1,1,0).
+
+```{r}
+fit4<-arima(z,order=c(0,1,0),seasonal=list(order=c(1,1,0),period=s)) 
+fit4
+
+ts.plot(fit4$residuals)
+acf(fit4$residuals,nlags)
+pacf(fit4$residuals,nlags) 
+```
+
+###Interpretation
+From the ACF and the PACF we can notice that this change has been advantageous. Moreover, we can see that the coefficient of the model is statistically different from 0.
+
+##Arima Model
+Looking at the ACF and PACF above, we see that the biggest limit breach is at lag 8 in the PACF graph. So, we fix the AR part of the model applying a SARIMA (8,1,0) x (1,1,0). 
+
+```{r}
+fit5<-arima(z,order=c(8,1,0),seasonal=list(order=c(1,1,0),period=s)) 
+fit5
+
+ts.plot(fit5$residuals)
+acf(fit5$residuals,nlags)
+pacf(fit5$residuals,nlags) 
+```
+
+###Interpretation
+From the ACF and the PACF we would say that this change has been advantageous. However, looking at the coefficients of the model, we see that the sarima coefficient is not significant anymore.
+
+## Remove Seasonality
+
+For this reason, we remove the Seasonal autoregressive portion of the model. 
+
+```{r}
+fit6<-arima(z,order=c(8,1,0),seasonal=list(order=c(0,1,0),period=s)) 
+fit6
+
+ts.plot(fit6$residuals)
+acf(fit6$residuals,nlags)
+pacf(fit6$residuals,nlags) 
+```
+
+### Interpretation
+
+From the ACF and PACF above we can see that all the lags of residuals are now within the limits and that the AR(8) coefficient is significant. For this reason, this model will be employed for forecasting.
+
+
+## WN and Normality testing
+
+
+```{r}
+#1st model - chosen for forecasting
+ndiffs(fit2$residuals, alpha=0.05, test=c("adf")) # regular differences?
+nsdiffs(fit2$residuals, m=s,test=c("ocsb")) # seasonal differences?
+
+#Test for White Noise
+Box.test(fit2$residuals,lag=24)
+
+#Test for Normality
+shapiro.test(fit2$residuals) 
+
+#2nd model - chosen for forecasting
+ndiffs(fit6$residuals, alpha=0.05, test=c("adf")) # regular differences?
+nsdiffs(fit6$residuals, m=s,test=c("ocsb")) # seasonal differences?
+
+#Test for White Noise
+Box.test(fit6$residuals,lag=24)
+
+#Test for Normality
+shapiro.test(fit6$residuals) 
+
+
+```
+
+From the results displayed above, we can see that both models produce WHITE NOISE residuals (Box-Ljung Test --> we accept H0 in both cases --> data is uncorrelated --> WN) but that are not normally distributed (Shapiro-Wilk Test --> we reject H0 --> not normally distributed).
+
+# Comparing the predictions with the actual values of the test set
+
+## 1st model
+
+```{r}
+
+y.pred<-predict(fit2,n.ahead=8)
+y.pred$pred   # point predictions
+y.pred$se    # standard errors #RED
+
+ts.plot(y.pred$pred)  # see how the model captures the seasonality
+
+y.test <- data[100:107,2]
+
+y.pred$pred
+y.pred$se
+y.test
+
+
+```
+
+## 2nd model
+
+
+```{r}
+
+y.pred2<- predict(fit6,n.ahead=8)
+y.pred2$pred <- exp(y.pred2$pred)   # undo log
+y.pred2$se <- y.pred2$pred * y.pred2$se    # standard errors #RED
+
+
+ts.plot(y.pred2$pred)  # see how the model captures the seasonality
+
+ly.test=log(y.test)
+
+y.pred2$pred
+y.pred2$se
+exp(ly.test)
+
+
+```
+
+## Compare models 
+```{r}
+
+#1 
+mean((y.pred$pred-y.test)**2)
+#2
+mean((y.pred2$pred)-exp(ly.test)**2)
+
+
+```
+
+From the results, we would choose model number 1 to be employed for forecasting.
+
+
