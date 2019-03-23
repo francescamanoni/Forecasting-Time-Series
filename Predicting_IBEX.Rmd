@@ -1,0 +1,248 @@
+---
+title: "IBEX PREDICTION"
+author: "Group D"
+date: "06 marzo 2019"
+output:
+  word_document:
+    always_allow_html: yes
+
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(fBasics)
+library(forecast) 
+library(corrplot)
+
+
+###1 - Find the best time series model for the variable IBEX
+
+
+data<-read.csv("Homework3_DATA.csv",header=TRUE,sep=";",dec=",")
+
+data<- subset(data, select=-c(Week)) 
+
+ts.plot(data[,1], col="blue", main = "IBEX vs Ex Rate")
+par(new=TRUE)
+ts.plot(data[,2], col="red")
+
+ts.plot(data[,1], col="blue", main = "IBEX vs Short Term Rate")
+par(new=TRUE)
+ts.plot(data[,3], col="red")
+
+ts.plot(data[,1], col="blue", main = "IBEX vs Long Term Rate")
+par(new=TRUE)
+ts.plot(data[,4], col="red")
+
+#Load d3heatmap library 
+library(d3heatmap)
+d3heatmap::d3heatmap(cor(data))
+
+corrplot(cor(data), 'number')
+
+y <- data$IBEX
+ts.plot(y)
+nlags <- 80
+acf(y, nlags)
+pacf(y, nlags)
+
+#s=52      # seasonal parameter 
+#nsdiffs(y.train,m=s,test=c("ocsb"))  # seasonal differences?
+ndiffs(y, alpha=0.05, test=c("adf")) # regular differences?
+
+m1<-arima(y,order=c(0,1,0)) 
+summary(m1)
+m1
+
+ts.plot(m1$residuals)
+acf(m1$residuals,nlags)
+pacf(m1$residuals,nlags) 
+
+
+#1st model - chosen for forecasting
+ndiffs(m1$residuals, alpha=0.05, test=c("adf")) # regular differences?
+
+#Test for White Noise
+Box.test(m1$residuals,lag=24)
+
+#Test for Normality
+shapiro.test(m1$residuals) 
+
+#the model produces residuals that are WHITE NOISE and Normally Distributed
+
+#The best TS Model is ARIMA (0,1,0)
+
+### 2 - Find the best regression model for the dependent variable "ibex". 
+# a.	do we have multicollinearity with these explanatory variables?
+# b.	Are the residuals White Noise?
+
+
+linear_model<- lm(IBEX~., data=data)
+summary(linear_model)
+objects(linear_model)
+
+#from the p-value all the variables look significant
+
+#printing the R-squared
+summary(linear_model)[['r.squared']]
+print(paste0('the model explains about ', 100*round(summary(linear_model)[['r.squared']],2),
+             '%',' of total variability in IBEX'))
+
+
+
+IBEX <- data$IBEX
+expl_var <- as.data.frame(subset(data, select = -c(IBEX)))
+exchangerate <- data$Exchangerate
+strate <- data$Shorttermrate
+ltrate <- data$Longtermrate
+
+m2 <- lm(data$IBEX~exchangerate+strate+ltrate)
+summary(m2)
+
+## REGRESSION MODEL WITH TS ERRORS
+
+
+plot(m2$residuals,type='l')
+acf(m2$residuals, lag = 30)
+pacf(m2$residuals, lag = 30)
+
+Box.test(m2$residuals,lag=30)
+
+#m2 is the final standard regression model
+#residuals are not white noise
+
+#If the residual series is nonstationary, 
+#take the first difference of both the dependent and the explanatory variables and go to step 1. 
+
+plot(diff(m2$residuals), type = 'l')
+acf(diff(m2$residuals), lag=30)
+pacf(diff(m2$residuals), lag=30)
+
+#by applying one difference the residuals appear to be white noise
+
+
+dIBEX <- diff(IBEX)
+dExchangerate <- diff(exchangerate)
+dShorttermrate <- diff(strate)
+dLongrate <- diff(ltrate)
+
+ddf <- cbind (dIBEX, dExchangerate, dShorttermrate, dLongrate)
+dexpl <- cbind (dExchangerate, dShorttermrate, dLongrate)
+
+cddf <- cor(ddf)
+corrplot.mixed(cddf)
+
+m3 <- lm(dIBEX~dExchangerate+dShorttermrate+dLongrate)
+summary(m3)
+#Short term rate is not significant
+#let's remove it
+
+m4 <- lm(dIBEX~dExchangerate+dLongrate)
+summary(m4)
+
+
+plot(m4$residuals,type='l')
+acf(m4$residuals,lag=30)
+pacf(m4$residuals,lag=30)
+Box.test(m4$residuals)
+
+#The Box Test let us reject H0 and conclude that the data is uncorrelated
+# but we see a lag out of limit in PACF so we try applying (4,0,0)
+
+expl_var2 <- cbind(dExchangerate, dLongrate)
+m5 <- arima(dIBEX,order=c(4,0,0), xreg= expl_var2,include.mean=F)
+summary(m5)
+
+#Ar4 is significant but AR1, AR2 and AR3 aren't
+
+
+acf(m5$residuals,lag=20)
+pacf(m5$residuals,lag=20)
+
+#Check for WN
+Box.test(m5$residuals,lag=15)
+
+#Check for Normality
+shapiro.test(m3$residuals)
+
+
+#White noise and Normal!!
+expl_var3 <- cbind(exchangerate, ltrate)
+m6 <- arima(IBEX,order=c(0,1,0), xreg= expl_var3,include.mean=F)
+summary(m6)
+
+
+
+### 4 
+# Choose among the three previous models the best one to explain variable "IBEX" using the 
+# estimate of the residual variance ad the in-sample criterion
+# m1, m2 and m3 compared
+
+summary(m1) # estimate of the residual variance for model 1 is 
+summary(m2)# estimate of the residual variance for model 2 is 
+summary(m5) # estimate of the residual variance for model 3 is
+summary(m6) #
+
+#Comparing the estimate of the residual variance for the 3 model we decide to use model 3 
+# (the regression model with time series errors)
+
+### 5
+# For the best model found in question 4 compute the one step ahead point prediction and 
+# confidence interval for the "ibex" given the values indicated in the case for all the expl var
+
+#Forecasting the explanatory variables
+
+plot(exchangerate, type="l")
+exrate_arima <- arima(exchangerate, order=c(0,1,0))
+acf(exrate_arima$residuals)
+pacf(exrate_arima$residuals)
+
+plot(ltrate, type="l")
+longtrate_arima <- arima(ltrate, order=c(0,1,0))
+acf(longtrate_arima$residuals)
+pacf(longtrate_arima$residuals)
+
+
+exratepred <- predict(exrate_arima, n.ahead = 1)
+exratepred$pred
+
+longratepred <- predict(longtrate_arima, n.ahead = 1)
+longratepred$pred
+
+exratep <- exratepred$pred
+longratep <- longratepred$pred
+lrpredictors <- as.matrix(cbind(exratep, longratep))
+expl <- cbind(exchangerate, ltrate)
+
+LRTS410 <- arima (y, order=c(4,1,0), xreg= expl, include.mean=F)
+LRTS410
+
+LRARIMA410pred <- predict(LRTS410, newxreg=lrpredictors, n.ahead=1)
+LRARIMA410pred
+
+#Prediction: Pred = 3356.882 +- 55.0762
+
+LRTS010 <- arima (y, order=c(0,1,0), xreg= expl, include.mean=F)
+LRTS010
+
+LRARIMA010pred <- predict(LRTS010, newxreg=lrpredictors, n.ahead=1)
+LRARIMA010pred
+ 
+#Prediction: Pred = 3357 +- 57.34402
+
+#### PREDICTION
+
+spexrate <- 0.781
+splongrate <- 10.76
+lrpredictors <- as.matrix(cbind(spexrate, splongrate))
+
+LRARIMA410pred <- predict(LRTS410, newxreg=lrpredictors, n.ahead=1)
+LRARIMA410pred
+
+LRARIMA010pred <- predict(LRTS010, newxreg=lrpredictors, n.ahead=1)
+LRARIMA010pred
+
+
+```
+
